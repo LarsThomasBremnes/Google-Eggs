@@ -1,0 +1,127 @@
+Made by Lars Thomas Bremnes
+
+/unlicense
+
+The basis of this is Marcin Moskala's article at https://medium.freecodecamp.org/how-to-solve-the-google-recruiters-puzzle-about-throwing-eggs-from-a-building-de6e7ef1755d
+
+He gives a solution to the problem written in Kotlin. However, there's a problem with it: 
+Kotlin is such a memory-devouring language that the recursive stackoverflows at a fairly
+low amount of floors, (this is also a general problem with the algorithm, irrespective of 
+language) 1200. Therefore, I wanted to convert it to C++. The most difficult thing to
+translate was this bit:
+
+fun <V, T> memorise(f: (V) -> T): (V) -> T {
+    val map = mutableMapOf<V, T>()
+    return { map.getOrPut(it) { f(it) } }
+}
+
+I arrived at just a simple array called FloorsAlreadyComputed (each namespace has it's own) that we index 
+into by the floor number we are at. As such, since we call the first floor '1' rather than '0', 
+FloorsAlreadyComputed[0] isn't used at all. Technically we're throwing away 8/4 bytes by doing so, 
+but it doesn't matter at all. As Moskala writes, the purpose of this lookup table is merely to speed
+up the calculations: the algorithm works correctly without it, but becomes painfully slow even at
+30 floors.
+
+The most basic version are OriginalU64 and OriginalU32, which are translated from Kotlin to C++
+as directly as I could. The only difference between these two is that the first uses only 64-bit 
+unsigned integers, and the latter 32-bit. I found, through trial and error, that the 64-bit 
+version has an upper limit of 5365 floors before it starts to overflow, whereas the 32-bit 
+version has a limit of 5850. That is to say: reducing the memory usage by half only gave us 
+a ~9% improvement, which I think demonstrates that always going for the smallest integer possible
+isn't necessarily going to give a huge improvement. There's no cost to doing so in this case,
+though, since we haven't even come close to any one integer having a value of 1 million, so
+reducing the theoretical upper limit of 18 quadrillion to 4 billion is a non-issue.
+
+For further improvements, we need to cut down on the recursion depth. We do this by
+inlining BestNextStep() (we start there since it's only called in one place), 
+which immediately bumps us up to an upper limit of 8045. Still a fairly modest improvement.
+This edition of the code is in the namespace InlineBestNextStep.
+
+Clearly, it must be MaxThrows() that is the primary culprit. It's called in two places,
+but since one of those places is in a for-loop, that's clearly where most of the callstack
+gets generated from. We inline the call to MaxThrows() in the for-loop, and immediately
+double our limit to 16090. This edition of the code is in the namespace 
+InlineBestNextStepThenMaxThrowsOnce.
+
+If we do the logical next step and inline the MaxThrows() fully, we find that there is no
+improvement to the limit before the algorithm starts to overflow the stack. So it seems that
+the limit for this algorithm is 16090 floors, which isn't very high at all.
+
+The algorithm presented by Moskala is quite smart, but also demonstrates that dynamic programming 
+has quite harsh limits. We need an iterative program instead. It's not that easy to see how
+we would translate BestMaxThrows() into an efficient iterative algorithm: we could make a manual
+stack, but that wouldn't really solve the fundamental problem.
+
+The solution I found came from just observing how the algorithm fills in the FloorsAlreadyComputed
+array. Here's what it looks like when calling BestMaxThrows(10):
+
+		[0]		0	
+		[1]		1	
+		[2]		2	
+		[3]		2	
+		[4]		3	
+		[5]		3	
+		[6]		3	
+		[7]		4	
+		[8]		4	
+		[9]		4	
+		[10]	4	
+
+And here's what it looks like when calling BestMaxThrows(20):
+
+		[0]		0	
+		[1]		1	
+		[2]		2	
+		[3]		2	
+		[4]		3	
+		[5]		3	
+		[6]		3	
+		[7]		4	
+		[8]		4	
+		[9]		4	
+		[10]	4	
+		[11]	5	
+		[12]	5	
+		[13]	5	
+		[14]	5	
+		[15]	5	
+		[16]	6	
+		[17]	6	
+		[18]	6	
+		[19]	6	
+		[20]	6	
+		[21]	6	
+
+There's two important revelations: Firstly, the first 10 (11, but we ignore [0]) values of the 
+20 floor solution are exactly the same as the 10 values of the 10 floor one. This makes sense, 
+since the gist of the algorithm is to first compute how many throws you need to verify a one floor 
+building (which is 1), then verify a two floor building, then a three floor, and continuously look
+back at previous solutions to get to the next one.
+
+The second one is the most crucial one: there's one 1, two 2s, three 3s, four 4s and so on. This
+makes sense in the way that if I try to imagine how it could be otherwise, I draw blanks, but
+at the same time I don't know precisely why this is mathematically true.
+
+When we combine these two observations we know that this pattern necessarily holds for an arbitrarily
+high number of floors, and means that we can arrive at this dead simple, highly efficient iterative algorithm:
+
+i64 Floor = DesiredFloor;
+u64 Throws = 0;
+while (Floor > 0) {
+	Floor -= ++Throws;
+}
+
+After executing this, "Throws" now holds the answer to the optimal number of throws in the worst case.
+This obviously has no issues with stack overflow at all, and is in practice limited by how fast the
+processor can do additions and subtractions.
+
+I think this demonstrates a practical approach to how to truly solve this kind of problem: first,
+do what Moskala did with continuously asking yourself what you logically need at one step, then
+kick the can down the road to another function that does what you need, until you finally arrive
+at a series of functions that form a recursive algorithm. Then, study the patterns generated by that,
+and exploit that pattern to make a much faster and memory efficient iterative algorithm. That is to say,
+dynamic programming is a stepping stone to arriving at efficient iteration. I think this kind of approach
+can be much simpler than delving deeply into mathematical derivations to find the "true" pattern that solves
+the problem. The proof is in the pudding: Moskala did a fair bit of maths to analyze the problem, but he
+could not do it to such an extent that he could see the "one 1, two 2s..." pattern and write the simple iterative
+algorithm right off the bat.
