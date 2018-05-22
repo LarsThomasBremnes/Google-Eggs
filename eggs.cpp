@@ -194,10 +194,10 @@ namespace InlineEverythingButBestMaxThrows {
 int main(void) {
 	u32 Val;
 	Val = OriginalU64::BestMaxThrows(5365);	// 5365 seems completely safe, above and it stack overflows inconsistently
-	Val = OriginalU32::BestMaxThrows(5850);	// 5850
-	Val = InlineBestNextStep::BestMaxThrows(8045);	// 8045
-	Val = InlineBestNextStepThenMaxThrowsOnce::BestMaxThrows(16090);	// 8045
-	Val = InlineEverythingButBestMaxThrows::BestMaxThrows(16090);	// 8045
+	Val = OriginalU32::BestMaxThrows(5850);
+	Val = InlineBestNextStep::BestMaxThrows(8045);
+	Val = InlineBestNextStepThenMaxThrowsOnce::BestMaxThrows(16090);
+	Val = InlineEverythingButBestMaxThrows::BestMaxThrows(16090);
 
 
 	#define DesiredFloor 16090ULL
@@ -206,8 +206,6 @@ int main(void) {
 	while (Floor > 0) {
 		Floor -= ++Throws;
 	}
-
-	Val = OriginalU32::BestMaxThrows(10);	// 5850
-	Val = OriginalU32::BestMaxThrows(21);	// 5850
+	
 	return 0;
 }
